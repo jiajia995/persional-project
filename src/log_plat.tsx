@@ -86,3 +86,65 @@
 //        放在其他钩子中，例如transform，代码侵入性太强了，会修改源码，肯定就会对源码原逻辑造成影响，而且每次模块转换都调用，会增加额外日志开销，此外不同js环境对console.log支持也不一样，可能会有兼容性问题。
 // 10、除了懒加载、虚拟滚动，工作中还做过哪些优化，举个例子说明？
 //        
+// 11、捕获接口信息的具体过程？
+//        我们利用Proxy对window.XMLHttpRequest做了代理。
+//        首先定义一个XHRProxy类，类中定义了一个static方法create，调用create方法可以返回一个Proxy实例，Proxy实例对原生的XMLHttpRequest进行了监听，在执行实例化XMLHttpRequest操作时，
+//    会返回一个新的Proxy实例，新的Proxy实例同样对原生XMLHttpRequest进行了监听，这次监听的时XMLHttpRequest的具体行为，例如open、send、setRequestHeader等，一旦调用XMLHttpRequest的
+//    这些属性或者执行这些方法，就会触发我们自定义的拦截行为，会将我们需要的请求和响应的具体信息处理成我们想要的格式，并执行回调函数，发送给app的socket服务上。
+
+// 12、什么是Proxy，作用以及工作原理？
+//        1、Proxy也就是代理，是js的一个内置对象，使用Proxy包裹要被代理的对象，相当于在对象之前架了一个拦截器，我们可以使用Proxy，在对目标对象进行读取、复制等一系列操作时，做一些自定义操作，能增强代码的灵活性和可维护性；
+//        2、一般采用new Proxy(target， handler)的方式使用，new Proxy返回的是一个包含了我们自定义拦截行为的新对象，在触发拦截行为时候就会执行我们的自定义操作，
+//    target只能是对象类型，任意对象，例如函数、对象、Proxy对象等都可以，handler可以捕获get、set、has等13种object的内部方法，并在方法中自定义行为，在对proxy对象触发这些操作时，就执行自定义方法；
+//        3、比如有一个对象obj={a:{b: 1}, c: 2}，使用Proxy包裹obj，只有obj会被代理，obj.a不会被代理，我们可以使用递归来深度代理；
+//        4、对于有this归属问题的对象，Proxy代理可能会有问题，比如Class obj1{construct() {} getName() {return this.name}}，使用Proxy代理obj2=new obj1()，proxy.name=1，访问getName会拿不到值，因为此时this指向obj1，
+//    如果使用Proxy代理obj1，再执行obj2.name=2，此时就可以再访问getName就可以拿到值2；
+//        5、当对Proxy对象进行操作时，js引擎会首先检查handler对象中是否定义了相应的拦截方法，如果定义了，就把对象和属性等传入，执行我们的自定义方法，我们可以在其中自定义行为实现对属性的拦截；
+//        6、可以使用const {proxy, revoke} = Proxy.revocable(target, handler)来创建可以撤销的代理，proxy是代理对象，revoke是函数，执行revoke会撤销proxy的代理，执行完函数，再调用proxy.message，会抛出异常；
+//        7、
+//        8、es标准委员会未Object定义了14个内部方法，例如get、set、HasProperty、GetPrototypeOf等，使用Proxy代理Object，handler可以捕获这些方法并重写
+//        举例：
+//            1、vue3实现对对象的观察者模式，就是利用Proxy+依赖收集和更新实现的;
+//            2、自己工作中用到的：接口信息的捕获；
+//        9、Proxy 与 Object.defineProperty() 相比，有哪些优势
+//              1、可拦截的操作更全面：Proxy 可以拦截对象的多种操作，如属性访问、赋值、函数调用、in 操作符、delete 操作符等，而 Object.defineProperty() 主要用于拦截属性的 get 和 set 操作。
+//              2、对数组的支持更好：Proxy 可以方便地拦截数组的各种操作，如元素的添加、删除、修改等，而使用 Object.defineProperty() 处理数组时会有一些局限性。
+//                     对数组的局限性：
+//                          1、Object.defineProperty() 是基于属性进行劫持的，它需要明确知道要劫持的属性名。对于数组来说，元素的索引就是属性名，使用数组方法，例如push时候，没有访问索引，所以无法感知到变化；
+//                          2、因为数组的length是动态变化的，数组的长度变化会影响元素的访问和删除，处理起来比较复杂；
+//              3、可以拦截对象的新增属性：Proxy 可以拦截对象新增属性的操作，而 Object.defineProperty() 只能对已存在的属性进行拦截，对新增属性拦截，需要额外代码处理。
+
+// 13、介绍下Reflect？
+//         1、顾名思义，Reflect就是反射，我们在操作对象的时候，使用对象的内部方法，例如Object.defineProperty()、Object.getOwnPropertyDescriptor()是函数形式调用的，delete、in是操作符形式调用的等，比较分散，也不够简洁明了，
+//     有些方法行为也不够规范，为了解决这些i行为，es6引入了Reflect，将Object上的方法都映射到了Reflect上，而且后面还会继续往Reflect上添加新的方法；
+//         2、使用Reflect调用Object内部方法，例如Reflect.get()、Reflect.set()、Reflect.has()、Reflect.deleteProperty()等，简洁明了，并且方法执行出错时候会返回false或者undefined，不会抛出异常，使用比较安全；
+//     像Object.defineProperty()执行失败会抛出异常，delete、Object.assign不会有成功失败反馈，需要对这些方法进行统一规范的管理；
+//         3、Reflect可以和Proxy结合使用，在Proxy的handler中捕获例如get方法时候，除了加入自定义逻辑，还需要执行默认逻辑，这时候就可以使用Reflect.get来执行默认逻辑；
+//               举例：
+//                   const handler = {
+//                           get(target, prop) {
+//                              let current = target;
+//                              while (current) {
+//                                  if (Object.prototype.hasOwnProperty.call(current, prop)) {
+//                                        return current[prop];
+//                                   }
+//                                  current = Object.getPrototypeOf(current);
+//                               }
+//                              return undefined;
+//                            }}
+//                  使用Reflect改善：
+//                      const handler = {
+//                             get(target, prop) {
+//                                 return Reflect.get(target, prop);
+//                             }
+//                      };
+//        4、Reflect.get 方法在查找属性时的具体流程是怎样的
+//                Reflect.get 首先会检查目标对象自身是否存在指定的属性。如果存在，就返回该属性的值；若不存在，则会沿着原型链向上查找，直到找到该属性或者到达原型链的末尾（即 Object.prototype）。
+//        若整个原型链都没有该属性，则返回 undefined。此外，如果提供了第三个参数 receiver，当属性是 getter 时，getter 函数中的 this 值会被设置为 receiver
+//        5、在 Proxy 的拦截器中使用 Reflect 有什么好处
+//                在 Proxy 拦截对象操作时，使用 Reflect 可以避免手动实现对象操作的默认行为。例如在拦截属性访问时，手动实现需要处理原型链查找等复杂逻辑，而使用 Reflect.get 可以简洁地实现默认的属性查找行为。
+//        同时，Reflect 的方法与 Proxy 的拦截方法一一对应，保证了代码的一致性和规范性，提高了代码的可读性和可维护性。
+//        6、Reflect 与 Object 对象的方法有什么区别和联系
+//             联系在于它们都与对象操作相关；
+//             区别主要体现在：Reflect 提供的是更统一、函数式的对象操作方法，而 Object 的方法更侧重于对象的创建、原型操作等方面。Reflect 的方法在操作失败时返回 false 或 undefined，而 Object 的一些方法可能会抛出错误。
+//        另外，Reflect 与 Proxy 紧密配合，用于实现对象操作的拦截和默认行为的调用，Object 则没有这方面的直接关联。
